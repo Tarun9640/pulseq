@@ -71,7 +71,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	// Business logic call
 	// Handler logic rayadu — service ni call chestundi
 	task, err := h.service.CreateTask(
-		c.Request.Context(),
+		c.Request.Context(), //Prevents zombie queries if client disconnects.
 		req.Type,
 		payloadBytes,
 	)

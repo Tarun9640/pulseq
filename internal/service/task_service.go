@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"log"
 
 	"github.com/Tarun9640/pulseq/internal/db"
+	"github.com/Tarun9640/pulseq/internal/queue"
 	"github.com/Tarun9640/pulseq/internal/repository"
 )
 
@@ -12,14 +14,16 @@ import (
 // Service layer lo manam rules, validations, future features add chestham.
 type TaskService struct {
 	repo *repository.TaskRepository // DB operations ni handle chestundi
+	queue *queue.RedisQueue
 }
 
 // NewTaskService creates a new instance of TaskService.
 // Dependency Injection pattern use chesthunam.
 // Direct ga repository create cheyyatledu -> loose coupling.
-func NewTaskService(r *repository.TaskRepository) *TaskService {
+func NewTaskService(r *repository.TaskRepository, q *queue.RedisQueue) *TaskService {
 	return &TaskService{
 		repo: r,
+		queue: q,
 	}
 }
 
@@ -39,14 +43,26 @@ func (s *TaskService) CreateTask(ctx context.Context, taskType string, payload [
 	// DB insert ki required fields prepare chesthunam.
 	params := db.CreateTaskParams{
 		Type: taskType,
-
-		// Always create tasks with "pending" status.
-		// Worker later pick chesi process chestadu.
-		Status: "pending",
-
+		Status: "pending", // Always create tasks with "pending" status.Worker later pick chesi process chestadu.
 		Payload: payload,
 	}
 
-	// Repository ni call chesi DB lo task create chesthunam.
-	return s.repo.CreateTask(ctx, params)
+	// ✅ Step 1 — Insert into DB
+	task, err := s.repo.CreateTask(ctx, params)
+	if err != nil {
+		return task, err
+	}
+
+	// ✅ Step 2 — Push to Redis queue
+	log.Println("Pushing task to Redis:", task.ID.String())
+
+	err = s.queue.Enqueue(ctx, task.ID.String())
+	if err != nil {
+		return task, err
+	}
+	log.Println("Task pushed successfully")
+
+
+	// ✅ Step 3 — Return task
+	return task, nil
 }
