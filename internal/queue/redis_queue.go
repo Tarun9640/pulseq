@@ -16,7 +16,10 @@ func NewRedisQueue(c *redis.Client) *RedisQueue {
 	}
 }
 
-const TaskQueueName = "tasks_queue"
+const (
+	TaskQueueName = "tasks_queue"
+	ProcessingQueueName = "processing_queue"
+)
 
 //LPUSH → add job
 //BRPOP → worker takes job

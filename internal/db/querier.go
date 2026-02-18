@@ -7,12 +7,13 @@ package db
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 )
 
 type Querier interface {
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
-	GetTask(ctx context.Context, id pgtype.UUID) (Task, error)
+	GetTask(ctx context.Context, id uuid.UUID) (Task, error)
+	UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) error
 }
 
 var _ Querier = (*Queries)(nil)

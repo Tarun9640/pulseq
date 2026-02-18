@@ -8,7 +8,7 @@ package db
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 )
 
 const createTask = `-- name: CreateTask :one
@@ -49,7 +49,7 @@ SELECT id, type, status, payload, result, error_message, created_at, updated_at 
 WHERE id = $1
 `
 
-func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (Task, error) {
+func (q *Queries) GetTask(ctx context.Context, id uuid.UUID) (Task, error) {
 	row := q.db.QueryRow(ctx, getTask, id)
 	var i Task
 	err := row.Scan(
@@ -63,4 +63,20 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (Task, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateTaskStatus = `-- name: UpdateTaskStatus :exec
+UPDATE tasks
+SET status = $2, updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateTaskStatusParams struct {
+	ID     uuid.UUID `json:"id"`
+	Status string    `json:"status"`
+}
+
+func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) error {
+	_, err := q.db.Exec(ctx, updateTaskStatus, arg.ID, arg.Status)
+	return err
 }
