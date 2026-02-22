@@ -7,8 +7,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/pkg/postgres"
 	"github.com/Tarun9640/pulseq/pkg/redis"
@@ -16,7 +14,6 @@ import (
 )
 
 func main() {
-	log.Println("Worker started...")
 
 	//db
 	pool := postgres.NewPool()
@@ -24,11 +21,12 @@ func main() {
 
 	redisClient := redis.NewClient()
 
+	go worker.Scheduler(redisClient)
+
 	workerCount := 5
 
 	for i := 1; i <= workerCount; i++ {
 		go worker.StartWorker(i, queries, redisClient)
-		log.Printf("worker %d started...",i)
 	}
 
 	select{} // This blocks forever.If main exits → all goroutines die.

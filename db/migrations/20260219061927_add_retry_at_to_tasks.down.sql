@@ -1,0 +1,2 @@
+ALTER TABLE tasks
+ALTER COLUMN next_retry_at DROP DEFAULT;

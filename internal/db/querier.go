@@ -13,6 +13,10 @@ import (
 type Querier interface {
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
 	GetTask(ctx context.Context, id uuid.UUID) (Task, error)
+	// What Decides Placeholder Number(like $1,$2)? POSITION inside the query.
+	IncrementRetry(ctx context.Context, id uuid.UUID) error
+	MoveToFailed(ctx context.Context, id uuid.UUID) error
+	ScheduleRetry(ctx context.Context, arg ScheduleRetryParams) (int64, error)
 	UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) error
 }
 

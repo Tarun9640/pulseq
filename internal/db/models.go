@@ -5,17 +5,21 @@
 package db
 
 import (
+	"time"
+
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Task struct {
-	ID           uuid.UUID        `json:"id"`
-	Type         string           `json:"type"`
-	Status       string           `json:"status"`
-	Payload      []byte           `json:"payload"`
-	Result       []byte           `json:"result"`
-	ErrorMessage pgtype.Text      `json:"error_message"`
-	CreatedAt    pgtype.Timestamp `json:"created_at"`
-	UpdatedAt    pgtype.Timestamp `json:"updated_at"`
+	ID           uuid.UUID  `json:"id"`
+	Type         string     `json:"type"`
+	Status       string     `json:"status"`
+	Payload      []byte     `json:"payload"`
+	Result       []byte     `json:"result"`
+	ErrorMessage *string    `json:"error_message"`
+	RetryCount   int32      `json:"retry_count"`
+	MaxRetries   int32      `json:"max_retries"`
+	NextRetryAt  *time.Time `json:"next_retry_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }

@@ -18,6 +18,12 @@ CREATE TABLE tasks (
     result JSONB,
 
     error_message TEXT,
+    
+    retry_count INT NOT NULL DEFAULT 0,
+
+    max_retries INT NOT NULL DEFAULT 3,
+
+    next_retry_at TIMESTAMP,
 
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 

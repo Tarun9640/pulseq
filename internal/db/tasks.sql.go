@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -19,7 +20,7 @@ INSERT INTO tasks (
 ) VALUES (
     $1, $2, $3
 )
-RETURNING id, type, status, payload, result, error_message, created_at, updated_at
+RETURNING id, type, status, payload, result, error_message, retry_count, max_retries, next_retry_at, created_at, updated_at
 `
 
 type CreateTaskParams struct {
@@ -38,6 +39,9 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.Payload,
 		&i.Result,
 		&i.ErrorMessage,
+		&i.RetryCount,
+		&i.MaxRetries,
+		&i.NextRetryAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -45,7 +49,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 }
 
 const getTask = `-- name: GetTask :one
-SELECT id, type, status, payload, result, error_message, created_at, updated_at FROM tasks
+SELECT id, type, status, payload, result, error_message, retry_count, max_retries, next_retry_at, created_at, updated_at FROM tasks
 WHERE id = $1
 `
 
@@ -59,10 +63,59 @@ func (q *Queries) GetTask(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.Payload,
 		&i.Result,
 		&i.ErrorMessage,
+		&i.RetryCount,
+		&i.MaxRetries,
+		&i.NextRetryAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const incrementRetry = `-- name: IncrementRetry :exec
+
+UPDATE tasks
+SET retry_count = retry_count + 1, updated_at = NOW()
+WHERE id = $1
+`
+
+// What Decides Placeholder Number(like $1,$2)? POSITION inside the query.
+func (q *Queries) IncrementRetry(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, incrementRetry, id)
+	return err
+}
+
+const moveToFailed = `-- name: MoveToFailed :exec
+UPDATE tasks
+SET status = 'failed',
+    updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) MoveToFailed(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, moveToFailed, id)
+	return err
+}
+
+const scheduleRetry = `-- name: ScheduleRetry :execrows
+UPDATE tasks
+SET retry_count = retry_count + 1,
+    next_retry_at = $2,
+    updated_at = NOW()
+WHERE id = $1 AND retry_count < max_retries
+`
+
+type ScheduleRetryParams struct {
+	ID          uuid.UUID  `json:"id"`
+	NextRetryAt *time.Time `json:"next_retry_at"`
+}
+
+func (q *Queries) ScheduleRetry(ctx context.Context, arg ScheduleRetryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, scheduleRetry, arg.ID, arg.NextRetryAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateTaskStatus = `-- name: UpdateTaskStatus :exec

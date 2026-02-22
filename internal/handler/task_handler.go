@@ -98,7 +98,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		Type:      task.Type,
 		Status:    task.Status,
 		Payload:   payload,
-		CreatedAt: task.CreatedAt.Time.String(),
+		CreatedAt: task.CreatedAt.String(),
 	}
 
 
