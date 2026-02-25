@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/internal/queue"
+	"github.com/Tarun9640/pulseq/internal/ratelimiter"
 	"github.com/google/uuid"
 	redisLib "github.com/redis/go-redis/v9"
 )
@@ -25,7 +26,7 @@ import (
 // 7️⃣ If success → ACK + mark completed
 
 
-func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client) {
+func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client, tokenLimiter *ratelimiter.TokenBucketLimiter) {
 
 	ctx := context.Background()
 
@@ -44,6 +45,40 @@ func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client
 
 		log.Printf("Worker %d picked task %s\n", workerID, taskID)
 
+
+		// log.Println("Before Wait:", time.Now())
+		// // rate limiter -- in memory
+		// if err := limiter.Wait(ctx); err != nil {
+		// 	log.Println("rate limit error:", err)
+		// 	continue
+		// }
+		// log.Println("After Wait:", time.Now())
+
+		// distributed rate limiter - using redis
+		// fixed window
+		allowed, err := tokenLimiter.Allow(ctx)
+
+		if err != nil {
+			log.Println("Rate limiter error:", err)
+			continue
+		}
+
+		if !allowed {
+			log.Printf("Rate limit exceeded. Worker %d rejecting task %s\n", workerID, taskID)
+			// Remove from processing queue (ACK)
+			redisClient.LRem(ctx, queue.ProcessingQueueName, 1, taskID)
+
+			// Option 1: Push to delay queue (better)
+			retryTime := time.Now().Add(1 * time.Minute)
+
+			redisClient.ZAdd(ctx, queue.DelayQueue, redisLib.Z{
+				Score:  float64(retryTime.Unix()),
+				Member: taskID,
+			})
+
+			continue
+		}
+	
 		// Parse UUID
 		parsedID, err := uuid.Parse(taskID)
 		if err != nil {

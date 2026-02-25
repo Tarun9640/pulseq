@@ -5,7 +5,9 @@ import (
 
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/internal/handler"
+	"github.com/Tarun9640/pulseq/internal/middleware"
 	"github.com/Tarun9640/pulseq/internal/queue"
+	"github.com/Tarun9640/pulseq/internal/ratelimiter"
 	"github.com/Tarun9640/pulseq/internal/repository"
 	"github.com/Tarun9640/pulseq/internal/service"
 	"github.com/Tarun9640/pulseq/pkg/postgres"
@@ -36,7 +38,21 @@ func main() {
 	//gin
 	router := gin.Default()
 
-	router.POST("/tasks", handler.CreateTask)
+	// API Rate Limiter
+	apiRateLimiter := ratelimiter.NewAPIRateLimiter(redisClient, 30)
+
+	// Health API (No rate limit)
+	router.GET("/health", func(c *gin.Context){
+		c.JSON(200,"OK")
+	})
+
+	taskGroup := router.Group("/tasks")
+
+	taskGroup.Use(
+		middleware.RateLimitMiddleware(apiRateLimiter),
+	)
+
+	taskGroup.POST("", handler.CreateTask)
 
 	log.Println("Server running on :8080")
 
