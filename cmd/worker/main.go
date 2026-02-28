@@ -7,9 +7,11 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/internal/ratelimiter"
@@ -26,7 +28,9 @@ func main() {
 
 	redisClient := redis.NewClient()
 
-	go worker.Scheduler(redisClient)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go worker.Scheduler(ctx, redisClient)
 
 	// config := config.Config{
 	// 	RatelimitRPS: 1, //5 tokens per second
@@ -38,7 +42,7 @@ func main() {
 	//redisLimiter := ratelimiter.NewRedisRateLimiter(redisClient, 3) // only 3 workers are allowed per sec
 
 	//System allows 3 immediate requests burst, then 1 request per minute refill
-	tokenLimiter := ratelimiter.NewTokenBucketLimiter(redisClient, 100, 50, "worker_bucket")
+	tokenLimiter := ratelimiter.NewTokenBucketLimiter(redisClient, 5, 10, "worker_bucket")
 
 	// workerCount := 5
 
@@ -49,20 +53,23 @@ func main() {
 	// Dynamic Worker Manager
 	manager := worker.NewWorkerManager(redisClient, tokenLimiter, queries, 1, 10)
 
-	go manager.Start()
+	go manager.Start(ctx)
 
 	//select{} // This blocks forever.If main exits → all goroutines die.
 
 	//signal handling for graceful shutdown
 	stopSignal := make(chan os.Signal, 1)
 
-	signal.Notify(stopSignal, os.Interrupt)
+	signal.Notify(stopSignal, os.Interrupt, syscall.SIGTERM)
 
 	<-stopSignal
 
 	log.Println("Shutdown signal received")
 
+	cancel() // stop scheduler + manager
+
 	manager.Stop()
 
+	log.Println("Graceful shutdown complete")
 }
 

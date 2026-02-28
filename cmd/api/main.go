@@ -1,7 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
 
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/internal/handler"
@@ -53,8 +58,39 @@ func main() {
 	)
 
 	taskGroup.POST("", handler.CreateTask)
+	//router.Run(":8080")
 
-	log.Println("Server running on :8080")
+	// HTTP Server
+	srv := &http.Server{
+		Addr: ":8080",
+		Handler: router,
+	}
 
-	router.Run(":8080")
+	// Start server
+	go func() {
+		log.Println("Server running on :8080")
+
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Server error:", err)
+		}
+	}()
+
+	// Shutdown signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+
+	<-quit
+
+	log.Println("Shutdown signal received")
+
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown:", err)
+	}
+
+	log.Println("API server stopped gracefully")
+
 }

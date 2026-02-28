@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"strconv"
 	"time"
 
 	"github.com/Tarun9640/pulseq/internal/db"
@@ -26,28 +25,32 @@ import (
 // 7️⃣ If success → ACK + mark completed
 
 
-func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client, tokenLimiter *ratelimiter.TokenBucketLimiter, stopChan chan bool) {
-
-	ctx := context.Background()
+func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisClient *redisLib.Client, tokenLimiter *ratelimiter.TokenBucketLimiter, stopChan chan bool) {
 
 	log.Printf("Worker %d started...\n", workerID)
 
 	for {
 
+		// ---------- Graceful Shutdown ----------
 		select {
 			case <- stopChan :
-				log.Printf("Worker %d stopped\n", workerID)
+				log.Printf("Worker %d shutting down\n", workerID)
 				return
+
+			case <-ctx.Done():
+				log.Printf("Worker %d context cancelled\n", workerID)
+				return
+
 			default :
 
 		}
 		// Move job safely from main -> processing
 		//BRPOP = Blocking Right Pop Worker waits…Until job arrives.
 		//0 = wait FOREVER if BRPOP ctx, 5, queue wait for 5 sec if no job return error
-		taskID, err := redisClient.BRPopLPush(ctx, queue.TaskQueueName, queue.ProcessingQueueName, 0).Result() 
+		taskID, err := redisClient.BRPopLPush(ctx, queue.TaskQueueName, queue.ProcessingQueueName, 5 * time.Second).Result() 
 		
 		if err != nil {
-			log.Println("Worker error:", err)
+			//log.Println("Worker error:", err)
 			continue
 		}
 
@@ -62,8 +65,8 @@ func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client
 		// }
 		// log.Println("After Wait:", time.Now())
 
+
 		// distributed rate limiter - using redis
-		// fixed window
 		allowed, err := tokenLimiter.Allow(ctx)
 
 		if err != nil {
@@ -83,6 +86,7 @@ func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client
 				Score:  float64(retryTime.Unix()),
 				Member: taskID,
 			})
+			time.Sleep(500 * time.Millisecond)
 
 			continue
 		}
@@ -114,7 +118,7 @@ func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client
 			continue
 		}
 
-		// simulate work 
+		// ---------- Process Task ----------
 		err = processTask(task)
 
 		if err != nil {
@@ -207,34 +211,4 @@ func processTask(task db.Task) error {
 }
 
 
-func Scheduler(redisClient *redisLib.Client) {
-	log.Println("Scheduler started...")
-	ctx := context.Background()
-	for {
-		now := time.Now().Unix()
-
-		tasks, err := redisClient.ZRangeByScore(ctx, queue.DelayQueue, &redisLib.ZRangeBy{
-			Min: "-inf",
-			Max: strconv.FormatInt(now, 10),
-			Offset: 0,
-			Count:  10,
-		}).Result()
-
-		if err != nil {
-			log.Println("Scheduler error:", err)
-			time.Sleep(time.Second)
-			continue
-		}
-
-		for _, taskID := range tasks {
-			// Move atomically (best practice is Lua, but keeping simple) -- redis provide lua
-			// While Lua script runs: No other command runs , No interruption, No partial state
-			redisClient.ZRem(ctx, queue.DelayQueue, taskID)
-			redisClient.LPush(ctx, queue.TaskQueueName, taskID)
-
-			log.Printf("Scheduler moved task %s to main queue\n", taskID)
-		}
-		time.Sleep(1 * time.Second)
-	}
-}
 
