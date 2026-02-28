@@ -26,13 +26,21 @@ import (
 // 7️⃣ If success → ACK + mark completed
 
 
-func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client, tokenLimiter *ratelimiter.TokenBucketLimiter) {
+func StartWorker(workerID int, queries *db.Queries, redisClient *redisLib.Client, tokenLimiter *ratelimiter.TokenBucketLimiter, stopChan chan bool) {
 
 	ctx := context.Background()
 
 	log.Printf("Worker %d started...\n", workerID)
 
 	for {
+
+		select {
+			case <- stopChan :
+				log.Printf("Worker %d stopped\n", workerID)
+				return
+			default :
+
+		}
 		// Move job safely from main -> processing
 		//BRPOP = Blocking Right Pop Worker waits…Until job arrives.
 		//0 = wait FOREVER if BRPOP ctx, 5, queue wait for 5 sec if no job return error
