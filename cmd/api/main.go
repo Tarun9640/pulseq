@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/Tarun9640/pulseq/internal/config"
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/internal/handler"
 	"github.com/Tarun9640/pulseq/internal/middleware"
@@ -22,8 +23,11 @@ import (
 
 
 func main() {
+
+	cfg := config.LoadConfig()
+
 	// create pool
-	pool := postgres.NewPool()
+	pool := postgres.NewPool(cfg)
 
 	// create sqlc Queries
 	queries := db.New(pool)
@@ -31,7 +35,7 @@ func main() {
 	log.Println("sqlc connected...")
 
 	//redis
-	redisClient := redis.NewClient()
+	redisClient := redis.NewClient(cfg)
 	taskQueue := queue.NewRedisQueue(redisClient)
 
 	//layers
@@ -44,7 +48,7 @@ func main() {
 	router := gin.Default()
 
 	// API Rate Limiter
-	apiRateLimiter := ratelimiter.NewAPIRateLimiter(redisClient, 30)
+	apiRateLimiter := ratelimiter.NewAPIRateLimiter(redisClient, cfg.APIRateLimit)
 
 	// Health API (No rate limit)
 	router.GET("/health", func(c *gin.Context){
@@ -62,7 +66,7 @@ func main() {
 
 	// HTTP Server
 	srv := &http.Server{
-		Addr: ":8080",
+		Addr: ":" + cfg.Port,
 		Handler: router,
 	}
 

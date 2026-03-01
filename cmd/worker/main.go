@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Tarun9640/pulseq/internal/config"
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/internal/ratelimiter"
 	"github.com/Tarun9640/pulseq/internal/worker"
@@ -22,27 +23,25 @@ import (
 
 func main() {
 
+	cfg := config.LoadConfig()
+
 	//db
-	pool := postgres.NewPool()
+	pool := postgres.NewPool(cfg)
 	queries := db.New(pool)
 
-	redisClient := redis.NewClient()
+
+	redisClient := redis.NewClient(cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go worker.Scheduler(ctx, redisClient)
-
-	// config := config.Config{
-	// 	RatelimitRPS: 1, //5 tokens per second
-	// 	RatelimitBurst: 1, //bucketsize
-	// }
 
 	// limiter := rate.NewLimiter(rate.Limit(config.RatelimitRPS), config.RatelimitBurst)
 
 	//redisLimiter := ratelimiter.NewRedisRateLimiter(redisClient, 3) // only 3 workers are allowed per sec
 
 	//System allows 3 immediate requests burst, then 1 request per minute refill
-	tokenLimiter := ratelimiter.NewTokenBucketLimiter(redisClient, 5, 10, "worker_bucket")
+	tokenLimiter := ratelimiter.NewTokenBucketLimiter(redisClient, cfg.TokenRate, cfg.TokenBurst, "worker_bucket")
 
 	// workerCount := 5
 
@@ -51,7 +50,7 @@ func main() {
 	// }
 
 	// Dynamic Worker Manager
-	manager := worker.NewWorkerManager(redisClient, tokenLimiter, queries, 1, 10)
+	manager := worker.NewWorkerManager(redisClient, tokenLimiter, queries, cfg.WorkerMin, cfg.WorkerMax)
 
 	go manager.Start(ctx)
 

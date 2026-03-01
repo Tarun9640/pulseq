@@ -4,13 +4,14 @@ import (
 	"context"
 	"log"
 
+	"github.com/Tarun9640/pulseq/internal/config"
 	"github.com/redis/go-redis/v9"
 )
 
-func NewClient() *redis.Client {
+func NewClient(cfg config.Config) *redis.Client {
 
 	client := redis.NewClient(&redis.Options{
-		Addr: "localhost:6380",
+		Addr: cfg.RedisAddr,
 	})
 
 	_, err := client.Ping(context.Background()).Result()
