@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/Tarun9640/pulseq/internal/db"
@@ -20,9 +21,10 @@ type WorkerManager struct {
 	maxWorkers int
 	currentWorkers int
 	stopChans map[int]chan bool  // key workerId like 1,2 Value = stop channel like stopChan1
+	logger *slog.Logger
 }
 
-func NewWorkerManager(client *redis.Client, limiter *ratelimiter.TokenBucketLimiter, queries *db.Queries, minWorkers int, maxWorkers int) *WorkerManager {
+func NewWorkerManager(client *redis.Client, limiter *ratelimiter.TokenBucketLimiter, queries *db.Queries, minWorkers int, maxWorkers int, logger *slog.Logger) *WorkerManager {
 	return &WorkerManager{
 		redisClient: client,
 		limiter: limiter,
@@ -31,18 +33,19 @@ func NewWorkerManager(client *redis.Client, limiter *ratelimiter.TokenBucketLimi
 		maxWorkers: maxWorkers,
 		currentWorkers: 0,
 		stopChans: make(map[int]chan bool),
+		logger: logger,
 	}
 }
 
 func (m *WorkerManager) Start(ctx context.Context) {
 
-	log.Println("Worker Manager started...")
+	m.logger.Info("Worker Manager started...")
 
 	for {
 
 		select {
 			case <-ctx.Done():
-				log.Println("Worker manager stopping")
+				m.logger.Info("Worker manager stopping")
 				return
 
 			default:
@@ -58,7 +61,10 @@ func (m *WorkerManager) Start(ctx context.Context) {
 					continue
 				}
 
-				log.Println("Queue size:", queueSize)
+				m.logger.Info("queue metrics",
+					"queue_size", queueSize,
+					"workers", m.currentWorkers,
+				)
 
 				// Step 2: Decide how many workers needed
 				// Example:
@@ -76,8 +82,11 @@ func (m *WorkerManager) Start(ctx context.Context) {
 					requiredWorkers = m.maxWorkers
 				}
 
-				log.Println("Required workers:", requiredWorkers)
-				log.Println("Current workers:", m.currentWorkers)
+				m.logger.Info("worker health",
+					"active_workers", m.currentWorkers,
+					"min_workers", m.minWorkers,
+					"max_workers", m.maxWorkers,
+				)
 
 
 				// Step 5: SCALE UP (Add workers)
@@ -109,6 +118,7 @@ func (m *WorkerManager) Start(ctx context.Context) {
 							m.redisClient,
 							m.limiter,
 							stopChan,
+							m.logger,
 						)
 					}
 				}
@@ -146,15 +156,37 @@ func (m *WorkerManager) Start(ctx context.Context) {
 
 func (m *WorkerManager) Stop() {
 
-	log.Println("Stopping all workers...")
+	m.logger.Info("Stopping all workers...")
 
 	for id, stopChan := range m.stopChans {
 
-		log.Println("Stopping worker:", id)
+		m.logger.Info("Stopping worker:", "worker_id", id)
 
 		stopChan <- true
 
 		delete(m.stopChans, id)
 	}
 	m.currentWorkers = 0
+}
+
+func (m *WorkerManager) GetWorkerCount() int {
+	return m.currentWorkers
+}
+
+func (m *WorkerManager) GetWorkerStats(ctx context.Context) (map[string]interface{}, error) {
+
+	queueSize, err := m.redisClient.LLen(ctx, queue.TaskQueueName).Result()
+
+	if err !=nil {
+		return nil, err
+	}
+
+	stats := map[string]interface{} {
+		"active_workers" : m.currentWorkers,
+		"min_workers" : m.minWorkers,
+		"max_workers" : m.maxWorkers,
+		"queue_depth" : queueSize,
+	}
+
+	return stats, nil
 }

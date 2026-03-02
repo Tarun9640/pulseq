@@ -11,6 +11,7 @@ import (
 	"github.com/Tarun9640/pulseq/internal/config"
 	"github.com/Tarun9640/pulseq/internal/db"
 	"github.com/Tarun9640/pulseq/internal/handler"
+	"github.com/Tarun9640/pulseq/internal/logger"
 	"github.com/Tarun9640/pulseq/internal/middleware"
 	"github.com/Tarun9640/pulseq/internal/queue"
 	"github.com/Tarun9640/pulseq/internal/ratelimiter"
@@ -25,6 +26,8 @@ import (
 func main() {
 
 	cfg := config.LoadConfig()
+
+	logger := logger.NewLogger()
 
 	// create pool
 	pool := postgres.NewPool(cfg)
@@ -42,7 +45,7 @@ func main() {
 	repo := repository.NewTaskRepository(queries)
 	//inject -happens here
 	svc := service.NewTaskService(repo, taskQueue)
-	handler := handler.NewTaskHandler(svc)
+	taskHandler := handler.NewTaskHandler(svc)
 
 	//gin
 	router := gin.Default()
@@ -61,7 +64,7 @@ func main() {
 		middleware.RateLimitMiddleware(apiRateLimiter),
 	)
 
-	taskGroup.POST("", handler.CreateTask)
+	taskGroup.POST("", taskHandler.CreateTask)
 	//router.Run(":8080")
 
 	// HTTP Server
@@ -85,7 +88,7 @@ func main() {
 
 	<-quit
 
-	log.Println("Shutdown signal received")
+	logger.Info("Shutdown signal received")
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -95,6 +98,6 @@ func main() {
 		log.Fatal("Server forced to shutdown:", err)
 	}
 
-	log.Println("API server stopped gracefully")
+	logger.Info("API server stopped gracefully")
 
 }

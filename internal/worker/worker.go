@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"math"
 	"math/rand"
 	"time"
@@ -25,9 +26,9 @@ import (
 // 7️⃣ If success → ACK + mark completed
 
 
-func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisClient *redisLib.Client, tokenLimiter *ratelimiter.TokenBucketLimiter, stopChan chan bool) {
+func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisClient *redisLib.Client, tokenLimiter *ratelimiter.TokenBucketLimiter, stopChan chan bool, logger *slog.Logger) {
 
-	log.Printf("Worker %d started...\n", workerID)
+	logger.Info("Worker started", "worker_id", workerID)
 
 	for {
 
@@ -54,7 +55,10 @@ func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisCl
 			continue
 		}
 
-		log.Printf("Worker %d picked task %s\n", workerID, taskID)
+		logger.Info("task picked",
+			"worker_id", workerID,
+			"task_id", taskID,
+		)
 
 
 		// log.Println("Before Wait:", time.Now())
@@ -75,7 +79,11 @@ func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisCl
 		}
 
 		if !allowed {
-			log.Printf("Rate limit exceeded. Worker %d rejecting task %s\n", workerID, taskID)
+			logger.Warn("Rate limit exceeded.", 
+				"worker_id", workerID, 
+				"task_id", taskID,
+			)
+
 			// Remove from processing queue (ACK)
 			redisClient.LRem(ctx, queue.ProcessingQueueName, 1, taskID)
 
@@ -105,15 +113,21 @@ func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisCl
 		// Fetch task from DB
 		task, err := queries.GetTask(ctx, parsedID)
 		if err != nil {
-			log.Println("DB fetch error:", err)
+			logger.Error("db fetch failed",
+				"worker_id", workerID,
+				"error", err,
+			)
 			continue
 		}
 
-		log.Printf("Worker %d processing task type: %s\n", workerID, task.Type)
+		logger.Info("processing task",
+			"worker_id", workerID,
+			"task_type", task.Type,
+		)
 
 		// idempotency -- is status is already completed worker dont execute
 		if task.Status == "completed" {
-			log.Printf("Task %s already completed, skipping\n", taskID)
+			logger.Info("Task already completed, skipping", "task_id", taskID)
 			redisClient.LRem(ctx, queue.ProcessingQueueName, 1, taskID)
 			continue
 		}
@@ -122,7 +136,11 @@ func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisCl
 		err = processTask(task)
 
 		if err != nil {
-			log.Printf("Worker %d failed task %s: %v\n", workerID, taskID, err)
+			logger.Error("task failed",
+				"worker_id", workerID,
+				"task_id", taskID,
+				"error", err,
+			)
 
 			//retry logic
 			// for exponential backoff:
@@ -192,7 +210,10 @@ func StartWorker(ctx context.Context, workerID int, queries *db.Queries, redisCl
 			continue
 		}
 
-		log.Printf("Worker %d completed task %s\n", workerID, taskID)
+		logger.Info("task completed",
+			"worker_id", workerID,
+			"task_id", taskID,
+		)
 	}
 }
 

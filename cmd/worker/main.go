@@ -8,17 +8,19 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/Tarun9640/pulseq/internal/config"
 	"github.com/Tarun9640/pulseq/internal/db"
+	"github.com/Tarun9640/pulseq/internal/handler"
+	"github.com/Tarun9640/pulseq/internal/logger"
 	"github.com/Tarun9640/pulseq/internal/ratelimiter"
 	"github.com/Tarun9640/pulseq/internal/worker"
 	"github.com/Tarun9640/pulseq/pkg/postgres"
 	"github.com/Tarun9640/pulseq/pkg/redis"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -36,6 +38,8 @@ func main() {
 
 	go worker.Scheduler(ctx, redisClient)
 
+	logger := logger.NewLogger()
+
 	// limiter := rate.NewLimiter(rate.Limit(config.RatelimitRPS), config.RatelimitBurst)
 
 	//redisLimiter := ratelimiter.NewRedisRateLimiter(redisClient, 3) // only 3 workers are allowed per sec
@@ -50,9 +54,25 @@ func main() {
 	// }
 
 	// Dynamic Worker Manager
-	manager := worker.NewWorkerManager(redisClient, tokenLimiter, queries, cfg.WorkerMin, cfg.WorkerMax)
+	manager := worker.NewWorkerManager(redisClient, tokenLimiter, queries, cfg.WorkerMin, cfg.WorkerMax, logger)
 
 	go manager.Start(ctx)
+
+
+	//metrics server
+	metricsHandler := handler.NewMetricsHandler(redisClient, manager, logger)
+
+	workerHandler := handler.NewWorkerHandler(manager)
+
+	router := gin.Default()
+
+	router.GET("/metrics", metricsHandler.GetMetrics)
+
+	router.GET("/workers", workerHandler.GetWorkers)
+
+	// workers run on 9090 
+	go router.Run(":9090")
+
 
 	//select{} // This blocks forever.If main exits → all goroutines die.
 
@@ -63,12 +83,12 @@ func main() {
 
 	<-stopSignal
 
-	log.Println("Shutdown signal received")
+	logger.Info("Shutdown signal received")
 
 	cancel() // stop scheduler + manager
 
 	manager.Stop()
 
-	log.Println("Graceful shutdown complete")
+	logger.Info("Graceful shutdown complete")
 }
 

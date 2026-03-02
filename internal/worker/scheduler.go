@@ -5,7 +5,6 @@ import (
 	"log"
 	"strconv"
 	"time"
-
 	"github.com/Tarun9640/pulseq/internal/queue"
 	redisLib "github.com/redis/go-redis/v9"
 )
@@ -44,7 +43,7 @@ func Scheduler(ctx context.Context, redisClient *redisLib.Client) {
 				redisClient.ZRem(ctx, queue.DelayQueue, taskID)
 				redisClient.LPush(ctx, queue.TaskQueueName, taskID)
 
-				log.Printf("Scheduler moved task %s to main queue\n", taskID)
+				log.Printf("scheduler moved task %s to main queue",taskID)
 			}
 
 			time.Sleep(1 * time.Second)
